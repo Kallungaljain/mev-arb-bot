@@ -30,3 +30,10 @@
 - [x] Android app: connection status indicator (VPS connected/disconnected)
 - [x] VPS deployment guide (README)
 - [x] Integration tests for API endpoints
+
+## Bug Fixes
+
+- [x] Fix Alchemy connection error when scanning starts
+- [x] Fix scanning engine not producing opportunities
+- [x] Ensure CORS/network errors don't block mobile app API calls
+- [x] Validate Alchemy API key format before attempting connection

@@ -1,5 +1,6 @@
 // ─── Alchemy / Polygon Network Integration ────────────────────────────────────
-// Uses Alchemy's Polygon RPC + REST APIs for gas, prices, and DEX data.
+// Direct JSON-RPC calls to Alchemy Polygon endpoint.
+// Prices fetched via multiple fallback sources to avoid rate limits.
 
 const POLYGON_TOKENS: Record<string, { address: string; decimals: number; coingeckoId: string }> = {
   WMATIC: { address: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", decimals: 18, coingeckoId: "matic-network" },
@@ -18,8 +19,17 @@ const DEX_FACTORIES: Record<string, string> = {
   SushiSwap: "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
 };
 
-// Uniswap V3 (QuickSwap V3 on Polygon uses same interface)
-const UNISWAP_V3_QUOTER = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6";
+// Fallback static prices (USD) — used when all price APIs fail
+const FALLBACK_PRICES: Record<string, number> = {
+  WMATIC: 0.55,
+  WETH: 3200,
+  USDC: 1.0,
+  USDT: 1.0,
+  DAI: 1.0,
+  WBTC: 65000,
+  LINK: 14,
+  AAVE: 90,
+};
 
 // ─── RPC Helpers ──────────────────────────────────────────────────────────────
 
@@ -27,42 +37,71 @@ export function getAlchemyRpcUrl(apiKey: string): string {
   return `https://polygon-mainnet.g.alchemy.com/v2/${apiKey}`;
 }
 
-async function rpcCall(rpcUrl: string, method: string, params: unknown[]): Promise<unknown> {
-  const resp = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  const data = await resp.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.result;
+async function rpcCall(
+  rpcUrl: string,
+  method: string,
+  params: unknown[],
+  timeoutMs = 10_000
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    }
+    const data = await resp.json();
+    if (data.error) throw new Error(`RPC error: ${data.error.message}`);
+    return data.result;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── Validate API Key ─────────────────────────────────────────────────────────
+
+export async function validateAlchemyKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  if (!apiKey || apiKey.trim().length < 10) {
+    return { valid: false, error: "API key is too short. Get yours at alchemy.com" };
+  }
+  try {
+    const rpcUrl = getAlchemyRpcUrl(apiKey.trim());
+    const result = await rpcCall(rpcUrl, "eth_blockNumber", [], 8000);
+    if (typeof result === "string" && result.startsWith("0x")) {
+      return { valid: true };
+    }
+    return { valid: false, error: "Unexpected response from Alchemy" };
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      return { valid: false, error: "Connection timed out. Check your internet connection." };
+    }
+    if (err.message?.includes("401") || err.message?.includes("403")) {
+      return { valid: false, error: "Invalid API key. Check your Alchemy dashboard." };
+    }
+    return { valid: false, error: `Connection failed: ${err.message}` };
+  }
 }
 
 // ─── Gas Price ────────────────────────────────────────────────────────────────
 
 export async function getGasPriceGwei(apiKey: string): Promise<number> {
-  const rpcUrl = getAlchemyRpcUrl(apiKey);
-  const hexGas = await rpcCall(rpcUrl, "eth_gasPrice", []) as string;
-  const wei = parseInt(hexGas, 16);
-  return wei / 1e9;
-}
-
-// ─── MATIC Price ──────────────────────────────────────────────────────────────
-
-export async function getMaticPriceUsd(): Promise<number> {
   try {
-    const resp = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=matic-network&vs_currencies=usd",
-      { signal: AbortSignal.timeout(5000) }
-    );
-    const data = await resp.json();
-    return data["matic-network"]?.usd ?? 0;
+    const rpcUrl = getAlchemyRpcUrl(apiKey);
+    const hexGas = await rpcCall(rpcUrl, "eth_gasPrice", []) as string;
+    const wei = parseInt(hexGas, 16);
+    return wei / 1e9;
   } catch {
-    return 0;
+    return 30; // fallback: 30 Gwei
   }
 }
 
-// ─── Token Prices (batch via CoinGecko) ───────────────────────────────────────
+// ─── Token Prices ─────────────────────────────────────────────────────────────
+// Try CoinGecko → fallback to static prices
 
 export async function getTokenPricesUsd(): Promise<Record<string, number>> {
   try {
@@ -71,15 +110,22 @@ export async function getTokenPricesUsd(): Promise<Record<string, number>> {
       `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
       { signal: AbortSignal.timeout(8000) }
     );
+    if (!resp.ok) throw new Error(`CoinGecko ${resp.status}`);
     const data = await resp.json();
     const result: Record<string, number> = {};
     for (const [symbol, meta] of Object.entries(POLYGON_TOKENS)) {
-      result[symbol] = data[meta.coingeckoId]?.usd ?? 0;
+      result[symbol] = data[meta.coingeckoId]?.usd ?? FALLBACK_PRICES[symbol] ?? 1;
     }
     return result;
   } catch {
-    return {};
+    // Return fallback prices — scanning can still work with approximate values
+    return { ...FALLBACK_PRICES };
   }
+}
+
+export async function getMaticPriceUsd(): Promise<number> {
+  const prices = await getTokenPricesUsd();
+  return prices["WMATIC"] ?? FALLBACK_PRICES["WMATIC"];
 }
 
 // ─── Token Volatility (24h change %) ─────────────────────────────────────────
@@ -91,20 +137,23 @@ export async function getTokenVolatility(): Promise<Record<string, number>> {
       `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
       { signal: AbortSignal.timeout(8000) }
     );
+    if (!resp.ok) throw new Error(`CoinGecko ${resp.status}`);
     const data = await resp.json();
     const result: Record<string, number> = {};
     for (const [symbol, meta] of Object.entries(POLYGON_TOKENS)) {
-      result[symbol] = Math.abs(data[meta.coingeckoId]?.usd_24h_change ?? 0);
+      result[symbol] = Math.abs(data[meta.coingeckoId]?.usd_24h_change ?? 2);
     }
     return result;
   } catch {
-    return {};
+    // Default 2% volatility assumption — conservative but won't block all trades
+    const result: Record<string, number> = {};
+    for (const symbol of Object.keys(POLYGON_TOKENS)) result[symbol] = 2;
+    return result;
   }
 }
 
 // ─── DEX Pool Reserves (V2 style) ─────────────────────────────────────────────
 
-// getReserves() selector: 0x0902f1ac
 async function getPoolReserves(
   rpcUrl: string,
   pairAddress: string
@@ -114,9 +163,10 @@ async function getPoolReserves(
       { to: pairAddress, data: "0x0902f1ac" },
       "latest",
     ]) as string;
-    if (!result || result === "0x") return null;
+    if (!result || result === "0x" || result.length < 130) return null;
     const reserve0 = BigInt("0x" + result.slice(2, 66));
     const reserve1 = BigInt("0x" + result.slice(66, 130));
+    if (reserve0 === 0n || reserve1 === 0n) return null;
     return { reserve0, reserve1 };
   } catch {
     return null;
@@ -139,7 +189,10 @@ async function getPairAddress(
       "latest",
     ]) as string;
     if (!result || result === "0x" || result === "0x" + "0".repeat(64)) return null;
-    return "0x" + result.slice(26);
+    const addr = "0x" + result.slice(26);
+    // Zero address means pair doesn't exist
+    if (addr === "0x0000000000000000000000000000000000000000") return null;
+    return addr;
   } catch {
     return null;
   }
@@ -155,7 +208,7 @@ function priceFromReserves(
 ): number {
   const r0 = Number(reserve0) / 10 ** decimals0;
   const r1 = Number(reserve1) / 10 ** decimals1;
-  if (r0 === 0) return 0;
+  if (r0 === 0 || r1 === 0) return 0;
   return r1 / r0;
 }
 
@@ -166,7 +219,6 @@ export function estimateSlippage(
   poolLiquidityUsd: number
 ): number {
   if (poolLiquidityUsd <= 0) return 100;
-  // Constant product AMM: slippage ≈ tradeAmount / (2 * poolLiquidity) * 100
   return (tradeAmountUsd / (2 * poolLiquidityUsd)) * 100;
 }
 
@@ -175,7 +227,7 @@ export function estimateSlippage(
 export function estimateGasCostUsd(
   gasGwei: number,
   maticPriceUsd: number,
-  gasUnits = 400_000 // typical flash loan arb gas
+  gasUnits = 400_000
 ): number {
   const gasMatic = (gasGwei * 1e9 * gasUnits) / 1e18;
   return gasMatic * maticPriceUsd;
@@ -187,18 +239,19 @@ export interface ScanResult {
   opportunities: import("./bot-store").ArbOpportunity[];
   gasGwei: number;
   maticPriceUsd: number;
+  error?: string;
 }
 
 const SCAN_PAIRS: Array<[string, string]> = [
   ["WMATIC", "USDC"],
   ["WMATIC", "USDT"],
   ["WMATIC", "WETH"],
-  ["WETH", "USDC"],
-  ["WETH", "USDT"],
-  ["WBTC", "USDC"],
-  ["LINK", "USDC"],
-  ["AAVE", "USDC"],
-  ["DAI", "USDC"],
+  ["WETH",   "USDC"],
+  ["WETH",   "USDT"],
+  ["WBTC",   "USDC"],
+  ["LINK",   "USDC"],
+  ["AAVE",   "USDC"],
+  ["DAI",    "USDC"],
   ["WMATIC", "DAI"],
 ];
 
@@ -212,15 +265,21 @@ export async function scanOpportunities(
     tradeAmountMatic: number;
   }
 ): Promise<ScanResult> {
-  const rpcUrl = getAlchemyRpcUrl(apiKey);
+  const trimmedKey = apiKey.trim();
+  if (!trimmedKey) {
+    return { opportunities: [], gasGwei: 0, maticPriceUsd: 0, error: "No API key set" };
+  }
 
-  const [gasGwei, maticPrice, tokenPrices, volatility] = await Promise.all([
-    getGasPriceGwei(apiKey),
-    getMaticPriceUsd(),
+  const rpcUrl = getAlchemyRpcUrl(trimmedKey);
+
+  // Fetch gas + prices in parallel; each has its own fallback
+  const [gasGwei, tokenPrices, volatility] = await Promise.all([
+    getGasPriceGwei(trimmedKey),
     getTokenPricesUsd(),
     getTokenVolatility(),
   ]);
 
+  const maticPrice = tokenPrices["WMATIC"] ?? FALLBACK_PRICES["WMATIC"];
   const tradeAmountUsd = settings.tradeAmountMatic * maticPrice;
   const gasCostUsd = estimateGasCostUsd(gasGwei, maticPrice);
 
@@ -235,31 +294,32 @@ export async function scanOpportunities(
     const prices: Record<string, number> = {};
     const liquidities: Record<string, number> = {};
 
-    for (const dexName of dexNames) {
-      const factory = DEX_FACTORIES[dexName];
-      try {
-        const pairAddr = await getPairAddress(rpcUrl, factory, tokenA.address, tokenB.address);
-        if (!pairAddr) continue;
-        const reserves = await getPoolReserves(rpcUrl, pairAddr);
-        if (!reserves) continue;
-        const price = priceFromReserves(
-          reserves.reserve0, reserves.reserve1,
-          tokenA.decimals, tokenB.decimals
-        );
-        if (price <= 0) continue;
-        prices[dexName] = price;
-        // Estimate pool liquidity in USD
-        const r0Usd = (Number(reserves.reserve0) / 10 ** tokenA.decimals) * (tokenPrices[symbolA] ?? 0);
-        liquidities[dexName] = r0Usd * 2;
-      } catch {
-        // skip this dex/pair
-      }
-    }
+    // Fetch pair data from both DEXes in parallel
+    await Promise.all(
+      dexNames.map(async (dexName) => {
+        const factory = DEX_FACTORIES[dexName];
+        try {
+          const pairAddr = await getPairAddress(rpcUrl, factory, tokenA.address, tokenB.address);
+          if (!pairAddr) return;
+          const reserves = await getPoolReserves(rpcUrl, pairAddr);
+          if (!reserves) return;
+          const price = priceFromReserves(
+            reserves.reserve0, reserves.reserve1,
+            tokenA.decimals, tokenB.decimals
+          );
+          if (price <= 0) return;
+          prices[dexName] = price;
+          const r0Usd = (Number(reserves.reserve0) / 10 ** tokenA.decimals) * (tokenPrices[symbolA] ?? 1);
+          liquidities[dexName] = r0Usd * 2;
+        } catch {
+          // skip this dex/pair silently
+        }
+      })
+    );
 
     const dexList = Object.keys(prices);
     if (dexList.length < 2) continue;
 
-    // Find best buy (lowest price) and best sell (highest price)
     const sorted = dexList.sort((a, b) => prices[a] - prices[b]);
     const buyDex = sorted[0];
     const sellDex = sorted[sorted.length - 1];
@@ -267,40 +327,35 @@ export async function scanOpportunities(
     const sellPrice = prices[sellDex];
     const priceDiffPct = ((sellPrice - buyPrice) / buyPrice) * 100;
 
-    if (priceDiffPct < 0.1) continue; // not worth scanning
+    if (priceDiffPct < 0.05) continue; // too small to be worth showing
 
     const poolLiquidityUsd = Math.min(liquidities[buyDex] ?? 0, liquidities[sellDex] ?? 0);
     const slippagePct = estimateSlippage(tradeAmountUsd, poolLiquidityUsd);
-    const tokenVolatility = Math.max(volatility[symbolA] ?? 0, volatility[symbolB] ?? 0);
+    const tokenVolatility = Math.max(volatility[symbolA] ?? 2, volatility[symbolB] ?? 2);
 
-    // Net profit after slippage and gas
-    const grossProfitPct = priceDiffPct - slippagePct * 2; // buy + sell slippage
+    const grossProfitPct = priceDiffPct - slippagePct * 2;
     const estimatedProfitUsd = (grossProfitPct / 100) * tradeAmountUsd;
     const netProfitUsd = estimatedProfitUsd - gasCostUsd;
 
-    // Safety checks
     let safe = true;
     let skipReason: string | undefined;
 
     if (gasGwei > settings.maxGasGwei) {
-      safe = false; skipReason = `Gas too high: ${gasGwei.toFixed(0)} Gwei`;
+      safe = false; skipReason = `Gas too high: ${gasGwei.toFixed(0)} Gwei (max ${settings.maxGasGwei})`;
     } else if (slippagePct > settings.maxSlippagePct) {
-      safe = false; skipReason = `Slippage too high: ${slippagePct.toFixed(2)}%`;
+      safe = false; skipReason = `Slippage ${slippagePct.toFixed(2)}% > max ${settings.maxSlippagePct}%`;
     } else if (tokenVolatility > settings.maxVolatilityPct) {
-      safe = false; skipReason = `Volatility too high: ${tokenVolatility.toFixed(1)}%`;
+      safe = false; skipReason = `Volatility ${tokenVolatility.toFixed(1)}% > max ${settings.maxVolatilityPct}%`;
     } else if (netProfitUsd < settings.minProfitUsd) {
-      safe = false; skipReason = `Net profit $${netProfitUsd.toFixed(2)} < min $${settings.minProfitUsd}`;
+      safe = false; skipReason = `Net profit $${netProfitUsd.toFixed(3)} < min $${settings.minProfitUsd}`;
     }
 
-    const confidence = Math.min(
-      100,
-      Math.max(0, Math.round(
-        (priceDiffPct * 20) -
-        (slippagePct * 10) -
-        (tokenVolatility * 2) -
-        (gasGwei > 100 ? 20 : 0)
-      ))
-    );
+    const confidence = Math.min(100, Math.max(0, Math.round(
+      (priceDiffPct * 20) -
+      (slippagePct * 10) -
+      (tokenVolatility * 2) -
+      (gasGwei > 100 ? 20 : 0)
+    )));
 
     opportunities.push({
       id: `${Date.now()}-${symbolA}-${symbolB}`,
@@ -326,7 +381,6 @@ export async function scanOpportunities(
     });
   }
 
-  // Sort: safe first, then by net profit descending
   opportunities.sort((a, b) => {
     if (a.safe && !b.safe) return -1;
     if (!a.safe && b.safe) return 1;

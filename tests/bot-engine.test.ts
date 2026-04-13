@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateSlippage, estimateGasCostUsd } from "../lib/alchemy";
+import { estimateSlippage, estimateGasCostUsd, getAlchemyRpcUrl, validateAlchemyKey } from "../lib/alchemy";
 import { DEFAULT_SETTINGS, DEFAULT_BOT_STATE } from "../lib/bot-store";
 
 describe("Slippage Calculator", () => {
@@ -76,6 +76,37 @@ describe("Default Bot State", () => {
     expect(DEFAULT_BOT_STATE.totalProfitUsd).toBe(0);
     expect(DEFAULT_BOT_STATE.successTrades).toBe(0);
     expect(DEFAULT_BOT_STATE.failedTrades).toBe(0);
+  });
+});
+
+describe("getAlchemyRpcUrl", () => {
+  it("formats the URL correctly", () => {
+    const url = getAlchemyRpcUrl("test-key-123");
+    expect(url).toBe("https://polygon-mainnet.g.alchemy.com/v2/test-key-123");
+  });
+
+  it("includes the API key in the path", () => {
+    const key = "abc-def-ghi";
+    expect(getAlchemyRpcUrl(key)).toContain(key);
+  });
+});
+
+describe("validateAlchemyKey", () => {
+  it("rejects empty key immediately", async () => {
+    const result = await validateAlchemyKey("");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+
+  it("rejects key shorter than 10 chars", async () => {
+    const result = await validateAlchemyKey("abc");
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("short");
+  });
+
+  it("rejects obviously invalid key (network will return 401)", async () => {
+    const result = await validateAlchemyKey("definitely-not-a-real-key-12345");
+    expect(result.valid).toBe(false);
   });
 });
 

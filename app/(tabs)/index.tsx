@@ -78,17 +78,17 @@ function PulsingDot({ active }: { active: boolean }) {
 }
 
 export default function DashboardScreen() {
-  const { botState, opportunities, settings, startBot, stopBot, vpsConnected, vpsMode } = useBotContext();
+  const { botState, opportunities, settings, startBot, stopBot, vpsConnected, vpsMode, scanError } = useBotContext();
 
   const safeOpps = opportunities.filter((o) => o.safe);
   const topProfit = safeOpps[0]?.netProfitUsd ?? 0;
 
-  const handleToggle = () => {
+  const handleToggle = async () => {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     if (botState.running) stopBot();
-    else startBot();
+    else await startBot();
   };
 
   const netPnl = botState.totalProfitUsd - botState.totalGasUsd;
@@ -135,6 +135,14 @@ export default function DashboardScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Scan Error Banner */}
+        {scanError && (
+          <View style={[styles.warningBanner, { backgroundColor: "#FF3B5C10", borderColor: "#FF3B5C40" }]}>
+            <IconSymbol name="exclamationmark.triangle.fill" size={14} color="#FF3B5C" />
+            <Text style={[styles.warningText, { color: "#FF3B5C" }]}>{scanError}</Text>
+          </View>
+        )}
 
         {/* VPS Mode Banner */}
         {vpsMode ? (

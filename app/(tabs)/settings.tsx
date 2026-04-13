@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,13 @@ import {
   Pressable,
   Switch,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { useBotContext } from "@/lib/bot-context";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import * as Haptics from "expo-haptics";
+import { validateAlchemyKey } from "@/lib/alchemy";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -121,6 +123,20 @@ export default function SettingsScreen() {
   const [tradeAmount, setTradeAmount] = useState(settings.tradeAmountMatic.toString());
   const [autoExecute, setAutoExecute] = useState(settings.autoExecute);
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleTestKey = async () => {
+    if (!apiKey.trim()) { setTestResult({ ok: false, msg: "Enter an API key first" }); return; }
+    setTesting(true);
+    setTestResult(null);
+    const result = await validateAlchemyKey(apiKey.trim());
+    setTesting(false);
+    setTestResult(result.valid
+      ? { ok: true, msg: "Connected to Polygon Mainnet ✓" }
+      : { ok: false, msg: result.error ?? "Invalid key" }
+    );
+  };
 
   const handleSave = async () => {
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -166,12 +182,30 @@ export default function SettingsScreen() {
         <Section title="🔌 Network">
           <FieldRow
             label="Alchemy API Key"
-            hint="Get a free key at alchemy.com → Polygon Mainnet"
+            hint="Get a free key at alchemy.com → Apps → Create App → Polygon Mainnet"
             value={apiKey}
-            onChangeText={setApiKey}
+            onChangeText={(v) => { setApiKey(v); setTestResult(null); }}
             placeholder="your-alchemy-api-key"
             secure
           />
+          <Pressable
+            onPress={handleTestKey}
+            style={({ pressed }) => [styles.testBtn, pressed && { opacity: 0.8 }]}
+            disabled={testing}
+          >
+            {testing
+              ? <ActivityIndicator size="small" color="#00E5FF" />
+              : <IconSymbol name="antenna.radiowaves.left.and.right" size={14} color="#00E5FF" />
+            }
+            <Text style={styles.testBtnText}>{testing ? "Testing..." : "Test Connection"}</Text>
+          </Pressable>
+          {testResult && (
+            <View style={[styles.testResult, testResult.ok ? styles.testOk : styles.testFail]}>
+              <Text style={[styles.testResultText, { color: testResult.ok ? "#00FF88" : "#FF3B5C" }]}>
+                {testResult.msg}
+              </Text>
+            </View>
+          )}
         </Section>
 
         {/* Wallet */}
@@ -409,4 +443,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   securityText: { color: "#374151", fontSize: 11, flex: 1, lineHeight: 16 },
+  testBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    marginTop: 10, paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 8, borderWidth: 1, borderColor: "#00E5FF30",
+    backgroundColor: "#00E5FF08", alignSelf: "flex-start",
+  },
+  testBtnText: { color: "#00E5FF", fontSize: 12, fontWeight: "600" },
+  testResult: {
+    marginTop: 8, padding: 10, borderRadius: 8, borderWidth: 1,
+  },
+  testOk: { backgroundColor: "#00FF8810", borderColor: "#00FF8840" },
+  testFail: { backgroundColor: "#FF3B5C10", borderColor: "#FF3B5C40" },
+  testResultText: { fontSize: 12, fontWeight: "600" },
 });
