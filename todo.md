@@ -37,3 +37,10 @@
 - [x] Fix scanning engine not producing opportunities
 - [x] Ensure CORS/network errors don't block mobile app API calls
 - [x] Validate Alchemy API key format before attempting connection
+
+## Crash Fix
+
+- [x] Fix app crash on Android startup
+- [x] Ensure all imports resolve correctly (no missing modules)
+- [x] Fix any runtime errors in BotProvider / context
+- [x] Ensure APK build succeeds cleanly

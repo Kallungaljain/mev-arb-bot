@@ -1,42 +1,12 @@
-import { createTRPCReact } from "@trpc/react-query";
-import { httpBatchLink } from "@trpc/client";
-import superjson from "superjson";
-import type { AppRouter } from "@/server/routers";
-import { getApiBaseUrl } from "@/constants/oauth";
-import * as Auth from "@/lib/_core/auth";
-
 /**
- * tRPC React client for type-safe API calls.
+ * tRPC client stub.
  *
- * IMPORTANT (tRPC v11): The `transformer` must be inside `httpBatchLink`,
- * NOT at the root createClient level. This ensures client and server
- * use the same serialization format (superjson).
+ * The MEV bot app does not use tRPC procedures directly.
+ * This file exists only to satisfy the template's _layout.tsx import.
+ * We do NOT import from server/routers here because that would pull in
+ * ethers + ws (Node.js-only) which crash on Android/iOS.
  */
-export const trpc = createTRPCReact<AppRouter>();
 
-/**
- * Creates the tRPC client with proper configuration.
- * Call this once in your app's root layout.
- */
-export function createTRPCClient() {
-  return trpc.createClient({
-    links: [
-      httpBatchLink({
-        url: `${getApiBaseUrl()}/api/trpc`,
-        // tRPC v11: transformer MUST be inside httpBatchLink, not at root
-        transformer: superjson,
-        async headers() {
-          const token = await Auth.getSessionToken();
-          return token ? { Authorization: `Bearer ${token}` } : {};
-        },
-        // Custom fetch to include credentials for cookie-based auth
-        fetch(url, options) {
-          return fetch(url, {
-            ...options,
-            credentials: "include",
-          });
-        },
-      }),
-    ],
-  });
-}
+// No-op exports to avoid import errors if anything still references this file
+export const trpc = {} as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+export function createTRPCClient() { return {} as any; } // eslint-disable-line @typescript-eslint/no-explicit-any

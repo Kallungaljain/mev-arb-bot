@@ -21,7 +21,7 @@ import {
 } from "./bot-store";
 import { scanOpportunities, validateAlchemyKey } from "./alchemy";
 import { vpsClient } from "./vps-client";
-import type { ScannerState } from "../server/scanner";
+import type { ScannerState } from "../shared/scanner-types";
 
 // ─── Context Types ─────────────────────────────────────────────────────────────
 

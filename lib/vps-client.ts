@@ -13,7 +13,7 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { ScannerState } from "../server/scanner";
+import type { ScannerState } from "../shared/scanner-types";
 import type { ArbOpportunity, TradeRecord } from "./bot-store";
 
 export interface VpsConfig {
