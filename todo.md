@@ -16,3 +16,17 @@
 - [x] Auto-execute engine: sign and submit profitable trades
 - [x] App logo and branding
 - [x] AsyncStorage persistence for settings
+
+## VPS Backend Upgrade
+
+- [x] VPS scanner service: WebSocket pool event subscriptions (replace 15s polling)
+- [x] Sync/Swap event listener on QuickSwap + SushiSwap pool contracts
+- [x] Pending transaction mempool watcher via eth_subscribe
+- [x] Opportunity engine running on VPS (sub-200ms response)
+- [x] REST API server: GET /status, GET /opportunities, GET /history, POST /bot/start, POST /bot/stop
+- [x] WebSocket push server: real-time opportunity + state updates to Android app
+- [x] Android app: VPS connection screen (enter VPS URL + API secret)
+- [x] Android app: switch from local scanner to VPS WebSocket feed
+- [x] Android app: connection status indicator (VPS connected/disconnected)
+- [x] VPS deployment guide (README)
+- [x] Integration tests for API endpoints

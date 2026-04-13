@@ -40,6 +40,9 @@ const MAPPING = {
   "dollarsign.circle.fill": "monetization-on",
   "waveform": "graphic-eq",
   "antenna.radiowaves.left.and.right": "wifi",
+  "server.rack": "dns",
+  "wifi": "wifi",
+  "wifi.slash": "wifi-off",
 } as IconMapping;
 
 export function IconSymbol({

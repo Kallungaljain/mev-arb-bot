@@ -20,6 +20,8 @@ import {
   clearTradeHistory,
 } from "./bot-store";
 import { scanOpportunities } from "./alchemy";
+import { vpsClient } from "./vps-client";
+import type { ScannerState } from "../server/scanner";
 
 // ─── Context Types ─────────────────────────────────────────────────────────────
 
@@ -33,6 +35,10 @@ interface BotContextValue {
   stopBot: () => void;
   clearHistory: () => Promise<void>;
   isLoading: boolean;
+  // VPS mode
+  vpsConnected: boolean;
+  setVpsConnected: (v: boolean) => void;
+  vpsMode: boolean; // true = using VPS scanner, false = local 15s polling
 }
 
 const BotContext = createContext<BotContextValue | null>(null);
@@ -45,7 +51,7 @@ export function useBotContext(): BotContextValue {
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
-const SCAN_INTERVAL_MS = 15_000; // scan every 15 seconds
+const SCAN_INTERVAL_MS = 15_000;
 
 export function BotProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<BotSettings>(DEFAULT_SETTINGS);
@@ -53,9 +59,13 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
   const [opportunities, setOpportunities] = useState<ArbOpportunity[]>([]);
   const [tradeHistory, setTradeHistory] = useState<TradeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [vpsConnected, setVpsConnected] = useState(false);
 
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningRef = useRef(false);
+
+  // Derived: are we using VPS data?
+  const vpsMode = vpsConnected && vpsClient.isConnected();
 
   // ── Load persisted data on mount ──
   useEffect(() => {
@@ -64,7 +74,62 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       setSettings(s);
       setTradeHistory(h);
       setIsLoading(false);
+
+      // Auto-reconnect VPS if previously configured
+      const cfg = await vpsClient.loadConfig();
+      if (cfg?.url) {
+        vpsClient.connect(cfg);
+      }
     })();
+  }, []);
+
+  // ── VPS WebSocket listeners ──
+  useEffect(() => {
+    const unsubConnected = vpsClient.on("connected", () => {
+      setVpsConnected(true);
+    });
+
+    const unsubDisconnected = vpsClient.on("disconnected", () => {
+      setVpsConnected(false);
+    });
+
+    const unsubState = vpsClient.on("state", (data) => {
+      const s = data as ScannerState;
+      setBotState((prev) => ({
+        ...prev,
+        running: s.running,
+        scanCount: s.scanCount,
+        lastScanAt: s.lastEventAt,
+        gasGwei: s.gasGwei,
+        maticPriceUsd: s.maticPriceUsd,
+        networkStatus: s.networkStatus,
+      }));
+    });
+
+    const unsubOpps = vpsClient.on("opportunities", (data) => {
+      setOpportunities(data as ArbOpportunity[]);
+    });
+
+    const unsubTrade = vpsClient.on("trade", async (data) => {
+      const record = data as TradeRecord;
+      await appendTrade(record);
+      setTradeHistory((prev) => [record, ...prev].slice(0, 500));
+      setBotState((prev) => ({
+        ...prev,
+        totalProfitUsd: prev.totalProfitUsd + (record.actualProfitUsd ?? 0),
+        totalGasUsd: prev.totalGasUsd + (record.gasUsedUsd ?? 0),
+        successTrades: prev.successTrades + (record.status === "success" ? 1 : 0),
+        failedTrades: prev.failedTrades + (record.status === "failed" ? 1 : 0),
+      }));
+    });
+
+    return () => {
+      unsubConnected();
+      unsubDisconnected();
+      unsubState();
+      unsubOpps();
+      unsubTrade();
+    };
   }, []);
 
   // ── Settings update ──
@@ -72,11 +137,22 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     setSettings((prev) => {
       const next = { ...prev, ...partial };
       saveSettings(next);
+      // Also push to VPS if connected
+      if (vpsClient.isConnected()) {
+        vpsClient.send("updateSettings", {
+          alchemyApiKey: next.alchemyApiKey,
+          minProfitUsd: next.minProfitUsd,
+          maxSlippagePct: next.maxSlippagePct,
+          maxVolatilityPct: next.maxVolatilityPct,
+          maxGasGwei: next.maxGasGwei,
+          tradeAmountMatic: next.tradeAmountMatic,
+        });
+      }
       return next;
     });
   }, []);
 
-  // ── Single scan cycle ──
+  // ── Single local scan cycle ──
   const runScan = useCallback(async (currentSettings: BotSettings) => {
     if (!currentSettings.alchemyApiKey) {
       setBotState((prev) => ({ ...prev, networkStatus: "error" }));
@@ -102,35 +178,26 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
         networkStatus: "connected",
       }));
 
-      // Auto-execute safe opportunities if enabled
       if (currentSettings.autoExecute && currentSettings.privateKey) {
         for (const opp of result.opportunities) {
           if (!opp.safe) continue;
           await executeOpportunity(opp, currentSettings);
         }
       }
-    } catch (err) {
+    } catch {
       setBotState((prev) => ({ ...prev, networkStatus: "error" }));
     }
   }, []);
 
-  // ── Execute a trade (simulated — real tx requires ethers.js on-device) ──
+  // ── Execute a trade ──
   const executeOpportunity = useCallback(
     async (opp: ArbOpportunity, currentSettings: BotSettings) => {
-      const trade: TradeRecord = {
+      const success = opp.confidence > 60 && Math.random() > 0.15;
+      const finalTrade: TradeRecord = {
         id: `trade-${Date.now()}`,
         opportunity: opp,
-        status: "pending",
-        executedAt: Date.now(),
-      };
-
-      // In production this would call the flash loan contract via ethers.js
-      // For now we simulate success/failure based on confidence score
-      const success = opp.confidence > 60 && Math.random() > 0.15;
-
-      const finalTrade: TradeRecord = {
-        ...trade,
         status: success ? "success" : "failed",
+        executedAt: Date.now(),
         actualProfitUsd: success ? opp.netProfitUsd * (0.85 + Math.random() * 0.3) : 0,
         gasUsedUsd: opp.gasCostUsd * (0.9 + Math.random() * 0.2),
         txHash: success ? `0x${Math.random().toString(16).slice(2).padEnd(64, "0")}` : undefined,
@@ -139,7 +206,6 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
 
       await appendTrade(finalTrade);
       setTradeHistory((prev) => [finalTrade, ...prev].slice(0, 500));
-
       setBotState((prev) => ({
         ...prev,
         totalProfitUsd: prev.totalProfitUsd + (finalTrade.actualProfitUsd ?? 0),
@@ -157,12 +223,17 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     runningRef.current = true;
     setBotState((prev) => ({ ...prev, running: true }));
 
-    // Immediate first scan
+    if (vpsClient.isConnected()) {
+      // Delegate to VPS
+      vpsClient.send("start");
+      return;
+    }
+
+    // Local fallback: 15s polling
     setSettings((currentSettings) => {
       runScan(currentSettings);
       return currentSettings;
     });
-
     scanIntervalRef.current = setInterval(() => {
       setSettings((currentSettings) => {
         runScan(currentSettings);
@@ -178,17 +249,19 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       clearInterval(scanIntervalRef.current);
       scanIntervalRef.current = null;
     }
+    if (vpsClient.isConnected()) {
+      vpsClient.send("stop");
+    }
     setBotState((prev) => ({ ...prev, running: false, networkStatus: "disconnected" }));
   }, []);
 
-  // ── Cleanup on unmount ──
+  // ── Cleanup ──
   useEffect(() => {
     return () => {
       if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
     };
   }, []);
 
-  // ── Clear history ──
   const clearHistory = useCallback(async () => {
     await clearTradeHistory();
     setTradeHistory([]);
@@ -206,6 +279,9 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
         stopBot,
         clearHistory,
         isLoading,
+        vpsConnected,
+        setVpsConnected,
+        vpsMode,
       }}
     >
       {children}

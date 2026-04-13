@@ -12,6 +12,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { useBotContext } from "@/lib/bot-context";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 
 function StatCard({
   label,
@@ -77,7 +78,7 @@ function PulsingDot({ active }: { active: boolean }) {
 }
 
 export default function DashboardScreen() {
-  const { botState, opportunities, settings, startBot, stopBot } = useBotContext();
+  const { botState, opportunities, settings, startBot, stopBot, vpsConnected, vpsMode } = useBotContext();
 
   const safeOpps = opportunities.filter((o) => o.safe);
   const topProfit = safeOpps[0]?.netProfitUsd ?? 0;
@@ -135,14 +136,32 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* No API Key Warning */}
-        {noApiKey && (
+        {/* VPS Mode Banner */}
+        {vpsMode ? (
+          <View style={[styles.warningBanner, { backgroundColor: "#00E5FF10", borderColor: "#00E5FF30" }]}>
+            <IconSymbol name="server.rack" size={14} color="#00E5FF" />
+            <Text style={[styles.warningText, { color: "#00E5FF" }]}>
+              VPS Mode — Real-time WebSocket events (50–200ms)
+            </Text>
+          </View>
+        ) : noApiKey ? (
           <View style={styles.warningBanner}>
             <IconSymbol name="exclamationmark.triangle.fill" size={16} color="#FFB800" />
             <Text style={styles.warningText}>
               Set your Alchemy API key in Settings to start scanning
             </Text>
           </View>
+        ) : (
+          <Pressable
+            onPress={() => router.push("/vps-connect" as any)}
+            style={({ pressed }) => [styles.warningBanner, { backgroundColor: "#00E5FF08", borderColor: "#00E5FF25", opacity: pressed ? 0.7 : 1 }]}
+          >
+            <IconSymbol name="server.rack" size={14} color="#4B5563" />
+            <Text style={[styles.warningText, { color: "#4B5563" }]}>
+              Connect VPS for real-time scanning (50–200ms latency)
+            </Text>
+            <IconSymbol name="chevron.right" size={12} color="#4B5563" />
+          </Pressable>
         )}
 
         {/* Start / Stop Button */}
