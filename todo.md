@@ -44,3 +44,37 @@
 - [x] Ensure all imports resolve correctly (no missing modules)
 - [x] Fix any runtime errors in BotProvider / context
 - [x] Ensure APK build succeeds cleanly
+
+## Production Stack — Full VPS + On-Chain System
+
+### Solidity Flash Loan Contract
+- [ ] Oracle-free EliteAntArb contract (AAVE V3 flash loan on Polygon)
+- [ ] On-chain price calculation from pool reserves (no Chainlink/oracle)
+- [ ] Atomic arbitrage: borrow → swap DEX A → swap DEX B → repay → profit
+- [ ] Slippage guard: revert if profit < minProfit (set by owner)
+- [ ] Emergency pause and owner-only withdraw
+- [ ] Hardhat project with deploy script and tests
+
+### Rust Elite Scanner
+- [ ] Rust workspace with tokio async runtime
+- [ ] WebSocket subscription to Polygon via Alchemy (eth_subscribe Sync/Swap events)
+- [ ] Pool reserve decoder (Uniswap V2 ABI)
+- [ ] Cross-DEX price comparison engine (QuickSwap vs SushiSwap)
+- [ ] Slippage + volatility + gas filter in Rust
+- [ ] IPC channel to Keeper (Unix socket or HTTP)
+- [ ] Prometheus metrics endpoint
+
+### Node.js Keeper Service
+- [ ] Risk engine: validate opportunity from Rust scanner
+- [ ] Bundle builder: construct flash loan calldata
+- [ ] Flash loan activator: sign + submit tx via ethers.js
+- [ ] WebSocket push server: broadcast to Android app
+- [ ] REST API: /status /opportunities /history /start /stop
+- [ ] Keeper config: min profit, max gas, max slippage, private key (env)
+
+### VPS Deployment
+- [ ] Docker Compose: scanner (Rust) + keeper (Node) + nginx reverse proxy
+- [ ] .env.example with all required variables
+- [ ] Systemd service files for production
+- [ ] VPS setup guide (Ubuntu 22.04)
+- [ ] Nginx config with SSL termination

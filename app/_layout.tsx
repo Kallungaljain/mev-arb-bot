@@ -1,5 +1,6 @@
 import "@/global.css";
 import { BotProvider } from "@/lib/bot-context";
+import { KeeperProvider } from "@/lib/keeper-context";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -79,12 +80,14 @@ export default function RootLayout() {
   const content = (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
-        <BotProvider>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="oauth/callback" />
-          </Stack>
-        </BotProvider>
+        <KeeperProvider>
+          <BotProvider>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="oauth/callback" />
+            </Stack>
+          </BotProvider>
+        </KeeperProvider>
         <StatusBar style="light" backgroundColor="#0A0E1A" />
       </QueryClientProvider>
     </GestureHandlerRootView>

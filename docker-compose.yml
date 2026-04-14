@@ -1,0 +1,87 @@
+version: "3.9"
+
+services:
+  # ─── Rust Elite Scanner ───────────────────────────────────────────────────
+  scanner:
+    build:
+      context: ./scanner
+      dockerfile: Dockerfile
+    container_name: elite-scanner
+    restart: unless-stopped
+    environment:
+      ALCHEMY_API_KEY: ${ALCHEMY_API_KEY}
+      KEEPER_URL: http://keeper:3001
+      KEEPER_SECRET: ${KEEPER_SECRET}
+      METRICS_PORT: 9090
+      MIN_PROFIT_CENTS: ${MIN_PROFIT_CENTS:-50}
+      MAX_SLIPPAGE_BPS: ${MAX_SLIPPAGE_BPS:-50}
+      MAX_GAS_GWEI: ${MAX_GAS_GWEI:-200}
+      RUST_LOG: info
+    ports:
+      - "9090:9090"  # Prometheus metrics
+    depends_on:
+      - keeper
+    networks:
+      - elite-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ─── Node.js Keeper Service ───────────────────────────────────────────────
+  keeper:
+    build:
+      context: ./keeper
+      dockerfile: Dockerfile
+    container_name: elite-keeper
+    restart: unless-stopped
+    environment:
+      ALCHEMY_API_KEY: ${ALCHEMY_API_KEY}
+      PRIVATE_KEY: ${PRIVATE_KEY}
+      CONTRACT_ADDRESS: ${CONTRACT_ADDRESS}
+      PROFIT_WALLET: ${PROFIT_WALLET}
+      MIN_PROFIT_WEI: ${MIN_PROFIT_WEI:-500000}
+      MAX_SLIPPAGE_BPS: ${MAX_SLIPPAGE_BPS:-50}
+      MAX_GAS_GWEI: ${MAX_GAS_GWEI:-200}
+      AUTO_EXECUTE: ${AUTO_EXECUTE:-false}
+      PORT: 3001
+      KEEPER_SECRET: ${KEEPER_SECRET}
+      WS_SECRET: ${WS_SECRET}
+      NODE_ENV: production
+    ports:
+      - "3001:3001"  # REST API + WebSocket
+    networks:
+      - elite-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ─── Prometheus (optional monitoring) ──────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: elite-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    networks:
+      - elite-net
+    profiles:
+      - monitoring
+
+networks:
+  elite-net:
+    driver: bridge
+
+volumes:
+  prometheus_data:
