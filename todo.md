@@ -48,33 +48,33 @@
 ## Production Stack — Full VPS + On-Chain System
 
 ### Solidity Flash Loan Contract
-- [ ] Oracle-free EliteAntArb contract (AAVE V3 flash loan on Polygon)
-- [ ] On-chain price calculation from pool reserves (no Chainlink/oracle)
-- [ ] Atomic arbitrage: borrow → swap DEX A → swap DEX B → repay → profit
-- [ ] Slippage guard: revert if profit < minProfit (set by owner)
-- [ ] Emergency pause and owner-only withdraw
-- [ ] Hardhat project with deploy script and tests
+- [x] Oracle-free EliteAntArb contract (AAVE V3 flash loan on Polygon)
+- [x] On-chain price calculation from pool reserves (no Chainlink/oracle)
+- [x] Atomic arbitrage: borrow → swap DEX A → swap DEX B → repay → profit
+- [x] Slippage guard: revert if profit < minProfit (set by owner)
+- [x] Emergency pause and owner-only withdraw
+- [x] Hardhat project with deploy script and tests
 
 ### Rust Elite Scanner
-- [ ] Rust workspace with tokio async runtime
-- [ ] WebSocket subscription to Polygon via Alchemy (eth_subscribe Sync/Swap events)
-- [ ] Pool reserve decoder (Uniswap V2 ABI)
-- [ ] Cross-DEX price comparison engine (QuickSwap vs SushiSwap)
-- [ ] Slippage + volatility + gas filter in Rust
-- [ ] IPC channel to Keeper (Unix socket or HTTP)
-- [ ] Prometheus metrics endpoint
+- [x] Rust workspace with tokio async runtime
+- [x] WebSocket subscription to Polygon via Alchemy (eth_subscribe Sync/Swap events)
+- [x] Pool reserve decoder (Uniswap V2 ABI)
+- [x] Cross-DEX price comparison engine (QuickSwap vs SushiSwap)
+- [x] Slippage + volatility + gas filter in Rust
+- [x] IPC channel to Keeper (Unix socket or HTTP)
+- [x] Prometheus metrics endpoint
 
 ### Node.js Keeper Service
-- [ ] Risk engine: validate opportunity from Rust scanner
-- [ ] Bundle builder: construct flash loan calldata
-- [ ] Flash loan activator: sign + submit tx via ethers.js
-- [ ] WebSocket push server: broadcast to Android app
-- [ ] REST API: /status /opportunities /history /start /stop
-- [ ] Keeper config: min profit, max gas, max slippage, private key (env)
+- [x] Risk engine: validate opportunity from Rust scanner
+- [x] Bundle builder: construct flash loan calldata
+- [x] Flash loan activator: sign + submit tx via ethers.js
+- [x] WebSocket push server: broadcast to Android app
+- [x] REST API: /status /opportunities /history /start /stop
+- [x] Keeper config: min profit, max gas, max slippage, private key (env)
 
 ### VPS Deployment
-- [ ] Docker Compose: scanner (Rust) + keeper (Node) + nginx reverse proxy
-- [ ] .env.example with all required variables
-- [ ] Systemd service files for production
-- [ ] VPS setup guide (Ubuntu 22.04)
-- [ ] Nginx config with SSL termination
+- [x] Docker Compose: scanner (Rust) + keeper (Node) + nginx reverse proxy
+- [x] .env.example with all required variables
+- [x] Systemd service files for production
+- [x] VPS setup guide (Ubuntu 22.04) — VPS_DEPLOYMENT.md complete
+- [x] Nginx config with SSL termination

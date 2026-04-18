@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { registerWebSocketServer } from "../ws-server";
+import { scanner } from "../bot-router";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -59,6 +60,72 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
+  });
+
+  // REST API Endpoints for Bot Control
+  app.get("/api/bot/status", (_req, res) => {
+    try {
+      const state = scanner.getState();
+      res.json(state);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/bot/opportunities", (_req, res) => {
+    try {
+      const state = scanner.getState();
+      res.json(state.opportunities || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/bot/history", (_req, res) => {
+    try {
+      res.json([]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/bot/start", express.json(), async (req, res) => {
+    try {
+      const { alchemyApiKey } = req.body;
+      if (!alchemyApiKey) {
+        return res.status(400).json({ error: "alchemyApiKey required" });
+      }
+      scanner.updateSettings({ alchemyApiKey });
+      await scanner.start();
+      res.json({ ok: true, message: "Scanner started" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/bot/stop", (_req, res) => {
+    try {
+      scanner.stop();
+      res.json({ ok: true, message: "Scanner stopped" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/bot/settings", express.json(), (req, res) => {
+    try {
+      const { minProfitUsd, maxSlippagePct, maxVolatilityPct, maxGasGwei, tradeAmountMatic } = req.body;
+      scanner.updateSettings({
+        ...(minProfitUsd !== undefined && { minProfitUsd }),
+        ...(maxSlippagePct !== undefined && { maxSlippagePct }),
+        ...(maxVolatilityPct !== undefined && { maxVolatilityPct }),
+        ...(maxGasGwei !== undefined && { maxGasGwei }),
+        ...(tradeAmountMatic !== undefined && { tradeAmountMatic }),
+      });
+      res.json({ ok: true, message: "Settings updated" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.use(
