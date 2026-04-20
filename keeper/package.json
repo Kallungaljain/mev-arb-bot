@@ -1,27 +1,29 @@
 {
   "name": "elite-keeper",
   "version": "1.0.0",
-  "description": "Elite MEV Keeper — Risk engine, bundle builder, and flash loan activator",
+  "description": "Production-grade MEV arbitrage keeper with profit simulation and Flashbots integration",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "dev": "ts-node index.ts",
+    "test": "jest"
   },
   "dependencies": {
-    "ethers": "^6.13.0",
-    "express": "^4.19.2",
-    "ws": "^8.18.0",
-    "dotenv": "^16.4.5",
-    "zod": "^3.23.8"
+    "ethers": "^6.10.0",
+    "axios": "^1.6.0",
+    "express": "^4.18.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "zeromq": "^6.0.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.12",
-    "tsx": "^4.19.0",
-    "typescript": "^5.5.4",
-    "vitest": "^2.1.9"
+    "typescript": "^5.3.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.0",
+    "@types/jest": "^29.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
   }
 }

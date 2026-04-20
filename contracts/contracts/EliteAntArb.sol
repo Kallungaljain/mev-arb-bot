@@ -1,9 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+/**
+ * @title EliteAntArb
+ * @notice Oracle-free flash loan arbitrage contract for Polygon
+ * 
+ * This contract executes atomic arbitrage using AAVE V3 flash loans:
+ * 1. Borrow token from AAVE
+ * 2. Swap on DEX A (buy intermediate token)
+ * 3. Swap on DEX B (sell intermediate token back)
+ * 4. Repay AAVE (principal + 0.05% fee)
+ * 5. Transfer profit to owner
+ * 
+ * All prices are oracle-free: calculated from actual pool reserves using x*y=k
+ */
+
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
-/// @dev Minimal AAVE V3 Pool interface — only what we need
 interface IPool {
     function flashLoanSimple(
         address receiverAddress,
@@ -14,7 +27,6 @@ interface IPool {
     ) external;
 }
 
-/// @dev AAVE V3 flash loan callback
 interface IFlashLoanSimpleReceiver {
     function executeOperation(
         address asset,
@@ -25,7 +37,6 @@ interface IFlashLoanSimpleReceiver {
     ) external returns (bool);
 }
 
-/// @dev Uniswap V2 / QuickSwap / SushiSwap pair interface
 interface IUniswapV2Pair {
     function getReserves() external view returns (
         uint112 reserve0,
@@ -42,7 +53,6 @@ interface IUniswapV2Pair {
     function token1() external view returns (address);
 }
 
-/// @dev Minimal ERC-20 interface
 interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
@@ -52,26 +62,6 @@ interface IERC20 {
 
 // ─── EliteAntArb ──────────────────────────────────────────────────────────────
 
-/**
- * @title  EliteAntArb
- * @notice Oracle-free flash loan arbitrage contract for Polygon.
- *
- * Flow:
- *   1. Keeper calls executeArb() with the opportunity parameters.
- *   2. Contract requests a flash loan from AAVE V3 for `loanToken` amount.
- *   3. In executeOperation():
- *      a. Swap loanToken → profitToken on DEX A (buyDex).
- *      b. Swap profitToken → loanToken on DEX B (sellDex).
- *      c. Verify net profit >= minProfit (oracle-free: uses actual received amounts).
- *      d. Repay flash loan (principal + AAVE premium).
- *      e. Transfer profit to profitWallet.
- *   4. If any step fails or profit < minProfit, the entire tx reverts — no loss.
- *
- * Oracle-free design:
- *   All price checks use the actual token amounts received from swaps,
- *   not external price feeds. The contract only succeeds if the real
- *   on-chain arithmetic produces a profit after fees.
- */
 contract EliteAntArb is IFlashLoanSimpleReceiver {
 
     // ── State ──────────────────────────────────────────────────────────────────
@@ -79,8 +69,8 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
     address public immutable owner;
     address public immutable aavePool;
     address public profitWallet;
-    uint256 public minProfitWei;   // minimum net profit in loanToken units
-    bool    public paused;
+    uint256 public minProfitWei;
+    bool public paused;
 
     // ── Events ─────────────────────────────────────────────────────────────────
 
@@ -117,20 +107,14 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
-    /**
-     * @param _aavePool     AAVE V3 Pool address on Polygon
-     *                      (0x794a61358D6845594F94dc1DB02A252b5b4814aD)
-     * @param _profitWallet Address that receives arbitrage profits
-     * @param _minProfitWei Minimum net profit in loanToken units to proceed
-     */
     constructor(
         address _aavePool,
         address _profitWallet,
         uint256 _minProfitWei
     ) {
         if (_aavePool == address(0) || _profitWallet == address(0)) revert ZeroAddress();
-        owner        = msg.sender;
-        aavePool     = _aavePool;
+        owner = msg.sender;
+        aavePool = _aavePool;
         profitWallet = _profitWallet;
         minProfitWei = _minProfitWei;
     }
@@ -138,13 +122,13 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
     // ── External: Keeper Entry Point ───────────────────────────────────────────
 
     /**
-     * @notice Called by the Keeper to execute a flash loan arbitrage.
-     * @param loanToken   Token to borrow (e.g. USDC)
-     * @param loanAmount  Amount to borrow in loanToken units
-     * @param buyDex      Uniswap V2-compatible pair address — buy profitToken here
-     * @param sellDex     Uniswap V2-compatible pair address — sell profitToken here
-     * @param profitToken Intermediate token (e.g. WMATIC)
-     * @param minProfit   Minimum acceptable net profit (keeper-side safety check)
+     * @notice Called by Keeper to execute flash loan arbitrage
+     * @param loanToken Token to borrow (e.g., USDC)
+     * @param loanAmount Amount to borrow
+     * @param buyDex Uniswap V2 pair to buy on
+     * @param sellDex Uniswap V2 pair to sell on
+     * @param profitToken Intermediate token (e.g., WMATIC)
+     * @param minProfit Minimum acceptable profit
      */
     function executeArb(
         address loanToken,
@@ -154,7 +138,6 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
         address profitToken,
         uint256 minProfit
     ) external notPaused {
-        // Only owner or approved keeper can trigger
         if (msg.sender != owner) revert NotOwner();
 
         bytes memory params = abi.encode(
@@ -169,26 +152,24 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
             loanToken,
             loanAmount,
             params,
-            0 // referralCode
+            0
         );
     }
 
     // ── AAVE Callback ──────────────────────────────────────────────────────────
 
     /**
-     * @notice AAVE V3 calls this after transferring `amount` of `asset` to us.
-     *         We must repay amount + premium before this function returns.
+     * @notice AAVE calls this after transferring borrowed tokens
+     * We must repay principal + premium before returning
      */
     function executeOperation(
-        address asset,          // loanToken
-        uint256 amount,         // borrowed amount
-        uint256 premium,        // AAVE fee (0.05% = 5 bps)
+        address asset,
+        uint256 amount,
+        uint256 premium,
         address initiator,
         bytes calldata params
     ) external override returns (bool) {
-        // Only AAVE pool can call this
         if (msg.sender != aavePool) revert NotAavePool();
-        // Initiator must be this contract
         require(initiator == address(this), "bad initiator");
 
         (
@@ -216,8 +197,7 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
             sellDex
         );
 
-        // ── Step 3: Oracle-free profit check ──────────────────────────────────
-        // Net profit = what we got back minus what we must repay
+        // ── Step 3: Verify profit ──────────────────────────────────────────────
         if (loanTokenReceived < repayAmount) {
             revert InsufficientRepayment();
         }
@@ -241,9 +221,8 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
     // ── Internal: Oracle-free Uniswap V2 Swap ─────────────────────────────────
 
     /**
-     * @dev Executes an exact-input swap on a Uniswap V2 pair.
-     *      Uses the pair's own reserves to compute the output — no oracle needed.
-     *      Returns the actual amount of tokenOut received.
+     * @dev Executes exact-input swap on Uniswap V2 pair
+     * Uses x*y=k formula to calculate output from reserves
      */
     function _swapExactIn(
         address tokenIn,
@@ -253,11 +232,9 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
     ) internal returns (uint256 amountOut) {
         IUniswapV2Pair dexPair = IUniswapV2Pair(pair);
 
-        // Determine token ordering in the pair
         address token0 = dexPair.token0();
         bool zeroForOne = (tokenIn == token0);
 
-        // Read current reserves
         (uint112 reserve0, uint112 reserve1,) = dexPair.getReserves();
         (uint256 reserveIn, uint256 reserveOut) = zeroForOne
             ? (uint256(reserve0), uint256(reserve1))
@@ -267,10 +244,10 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
         uint256 amountInWithFee = amountIn * 997;
         amountOut = (amountInWithFee * reserveOut) / (reserveIn * 1000 + amountInWithFee);
 
-        // Transfer tokenIn to the pair
+        // Transfer tokenIn to pair
         IERC20(tokenIn).transfer(pair, amountIn);
 
-        // Execute the swap
+        // Execute swap
         (uint256 amount0Out, uint256 amount1Out) = zeroForOne
             ? (uint256(0), amountOut)
             : (amountOut, uint256(0));
@@ -294,14 +271,10 @@ contract EliteAntArb is IFlashLoanSimpleReceiver {
         emit Paused(_paused);
     }
 
-    /**
-     * @notice Emergency withdraw any token stuck in this contract.
-     */
     function withdrawToken(address token, uint256 amount) external onlyOwner {
         IERC20(token).transfer(owner, amount);
         emit ProfitWithdrawn(token, amount, owner);
     }
 
-    /// @notice Reject plain ETH sends
     receive() external payable { revert("no ETH"); }
 }
