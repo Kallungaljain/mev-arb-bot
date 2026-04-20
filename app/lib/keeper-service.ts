@@ -43,7 +43,7 @@ export interface Trade {
 }
 
 class KeeperService extends EventEmitter {
-  private botRunning = false;
+  private botRunning: boolean = false;
   private botSettings: BotSettings | null = null;
   private botStatus: BotStatus = {
     running: false,
@@ -58,6 +58,10 @@ class KeeperService extends EventEmitter {
   };
   private trades: Trade[] = [];
   private statusUpdateInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    super();
+  }
 
   /**
    * Load settings from storage
