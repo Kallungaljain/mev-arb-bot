@@ -44,7 +44,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gear" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -66,13 +66,6 @@ export default function TabLayout() {
         options={{
           title: "Deploy",
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="paperplane.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color }) => <IconSymbol size={24} name="gearshape.fill" color={color} />,
         }}
       />
     </Tabs>

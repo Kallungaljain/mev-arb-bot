@@ -6,7 +6,34 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { EventEmitter } from 'events';
+
+// Simple event emitter for React Native (no Node.js dependencies)
+class SimpleEventEmitter {
+  private listeners = new Map<string, Set<Function>>();
+
+  on(event: string, listener: Function) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(listener);
+  }
+
+  off(event: string, listener: Function) {
+    this.listeners.get(event)?.delete(listener);
+  }
+
+  emit(event: string, ...args: any[]) {
+    this.listeners.get(event)?.forEach(listener => listener(...args));
+  }
+
+  removeAllListeners(event?: string) {
+    if (event) {
+      this.listeners.delete(event);
+    } else {
+      this.listeners.clear();
+    }
+  }
+}
 
 export interface BotSettings {
   privateKey: string;
@@ -42,7 +69,7 @@ export interface Trade {
   status: 'success' | 'failed' | 'pending';
 }
 
-class KeeperService extends EventEmitter {
+class KeeperService extends SimpleEventEmitter {
   private botRunning: boolean = false;
   private botSettings: BotSettings | null = null;
   private botStatus: BotStatus = {
