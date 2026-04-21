@@ -70,7 +70,19 @@ export async function validateAlchemyKey(apiKey: string): Promise<{ valid: boole
     return { valid: false, error: "API key is too short. Get yours at alchemy.com" };
   }
   try {
-    const rpcUrl = getAlchemyRpcUrl(apiKey.trim());
+    let key = apiKey.trim();
+    
+    // Extract API key if user pasted full URL
+    if (key.includes("alchemy.com")) {
+      const match = key.match(/\/v2\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        key = match[1];
+      } else {
+        return { valid: false, error: "Invalid Alchemy URL format. Paste just the API key." };
+      }
+    }
+    
+    const rpcUrl = getAlchemyRpcUrl(key);
     const result = await rpcCall(rpcUrl, "eth_blockNumber", [], 8000);
     if (typeof result === "string" && result.startsWith("0x")) {
       return { valid: true };
