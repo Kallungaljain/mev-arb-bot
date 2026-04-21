@@ -1,0 +1,76 @@
+[package]
+name = "mev-arb-engine"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "keeper"
+path = "src/bin/keeper.rs"
+
+[[bin]]
+name = "queen"
+path = "src/bin/queen.rs"
+
+[[bin]]
+name = "scanner"
+path = "src/bin/scanner.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-tungstenite = "0.21"
+
+# Web framework
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Blockchain
+ethers = { version = "2.0", features = ["abigen", "rustls"] }
+web3 = "0.19"
+
+# Math & algorithms
+num-bigint = "0.4"
+num-traits = "0.2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utilities
+tokio-util = "0.7"
+futures = "0.3"
+parking_lot = "0.12"
+dashmap = "5.5"
+lru = "0.12"
+
+# Environment
+dotenv = "0.15"
+env_logger = "0.11"
+
+# Time
+chrono = "0.4"
+
+# Hashing
+sha2 = "0.10"
+
+# Compression
+flate2 = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
