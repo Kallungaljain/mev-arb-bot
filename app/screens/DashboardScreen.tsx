@@ -11,6 +11,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
+import { apiClient, BotStatus as ApiBotStatus } from '@/app/lib/api-client';
+import * as Haptics from 'expo-haptics';
 
 interface Trade {
   id: string;
@@ -60,18 +62,48 @@ export default function DashboardScreen() {
 
   const loadStatus = async () => {
     try {
-      const storedStatus = await AsyncStorage.getItem('botStatus');
-      const storedTrades = await AsyncStorage.getItem('botTrades');
-
-      if (storedStatus) {
-        setStatus(JSON.parse(storedStatus));
+      // Try to load from backend API first
+      const apiStatus = await apiClient.getStatus();
+      if (apiStatus) {
+        setStatus({
+          running: apiStatus.isRunning,
+          connected: true,
+          totalTrades: apiStatus.totalTrades,
+          successfulTrades: apiStatus.successfulTrades,
+          totalProfit: apiStatus.totalProfit,
+          totalGasCost: apiStatus.totalTrades * 2.5,
+          lastTradeTime: apiStatus.lastTrade,
+          poolsTracked: 12,
+          currentGasPrice: 30,
+        });
       }
 
-      if (storedTrades) {
-        setTrades(JSON.parse(storedTrades).slice(-20)); // Last 20 trades
+      // Load opportunities
+      const opportunities = await apiClient.getOpportunities();
+      if (opportunities && opportunities.length > 0) {
+        const tradeTiles = opportunities.slice(0, 20).map((opp: any, idx: number) => ({
+          id: `${idx}`,
+          pair: opp.path?.join(' → ') || 'Unknown',
+          amount: 1000,
+          profit: opp.profit_usd || 0,
+          gasUsed: 2.5,
+          timestamp: Date.now(),
+          txHash: '',
+          status: (opp.profit_usd > 0 ? 'success' : 'failed') as 'success' | 'failed' | 'pending',
+        }));
+        setTrades(tradeTiles);
       }
     } catch (error) {
       console.error('Failed to load status:', error);
+      // Fall back to AsyncStorage if API fails
+      try {
+        const storedStatus = await AsyncStorage.getItem('botStatus');
+        if (storedStatus) {
+          setStatus(JSON.parse(storedStatus));
+        }
+      } catch (e) {
+        console.error('Fallback failed:', e);
+      }
     }
   };
 
@@ -84,21 +116,25 @@ export default function DashboardScreen() {
   const startBot = async () => {
     try {
       setLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      // Get settings
-      const settings = await AsyncStorage.getItem('botSettings');
-      if (!settings) {
-        alert('Please configure settings first');
+      // Get Alchemy API key
+      const { apiKey } = await apiClient.getCredentials();
+      if (!apiKey) {
+        alert('Please configure Alchemy API key in settings first');
         return;
       }
 
-      // Update status
-      const newStatus = { ...status, running: true, connected: true };
-      setStatus(newStatus);
-      await AsyncStorage.setItem('botStatus', JSON.stringify(newStatus));
-
-      // In production, this would connect to the Keeper service
-      // For now, we just update the UI
+      // Start bot via API
+      const success = await apiClient.startBot();
+      if (success) {
+        const newStatus = { ...status, running: true, connected: true };
+        setStatus(newStatus);
+        await AsyncStorage.setItem('botStatus', JSON.stringify(newStatus));
+        await loadStatus();
+      } else {
+        alert('Failed to start bot');
+      }
     } catch (error) {
       alert(`Failed to start bot: ${error}`);
     } finally {
@@ -108,9 +144,16 @@ export default function DashboardScreen() {
 
   const stopBot = async () => {
     try {
-      const newStatus = { ...status, running: false };
-      setStatus(newStatus);
-      await AsyncStorage.setItem('botStatus', JSON.stringify(newStatus));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const success = await apiClient.stopBot();
+      if (success) {
+        const newStatus = { ...status, running: false };
+        setStatus(newStatus);
+        await AsyncStorage.setItem('botStatus', JSON.stringify(newStatus));
+        await loadStatus();
+      } else {
+        alert('Failed to stop bot');
+      }
     } catch (error) {
       alert(`Failed to stop bot: ${error}`);
     }
@@ -254,7 +297,7 @@ export default function DashboardScreen() {
 
             {trades.length === 0 ? (
               <View className="bg-surface rounded-lg p-6 border border-border items-center">
-                <Text className="text-muted">No trades yet</Text>
+                <Text className="text-muted">No opportunities detected yet. Make sure bot is running.</Text>
               </View>
             ) : (
               <FlatList

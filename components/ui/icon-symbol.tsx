@@ -26,6 +26,7 @@ const MAPPING = {
   "doc.fill": "description",
   "wallet.pass.fill": "account-balance-wallet",
   "chart.line.uptrend.xyaxis": "show-chart",
+  "chart.bar.fill": "bar-chart",
   "flame.fill": "local-fire-department",
   "shield.fill": "security",
   "eye.fill": "visibility",
@@ -43,6 +44,8 @@ const MAPPING = {
   "server.rack": "dns",
   "wifi": "wifi",
   "wifi.slash": "wifi-off",
+  "checkmark.circle.fill": "check-circle",
+  "xmark.circle.fill": "cancel",
 } as IconMapping;
 
 export function IconSymbol({
