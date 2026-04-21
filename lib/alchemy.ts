@@ -82,18 +82,26 @@ export async function validateAlchemyKey(apiKey: string): Promise<{ valid: boole
       }
     }
     
-    const rpcUrl = getAlchemyRpcUrl(key);
-    const result = await rpcCall(rpcUrl, "eth_blockNumber", [], 8000);
-    if (typeof result === "string" && result.startsWith("0x")) {
+    // Use backend API to validate (avoids CORS issues)
+    const backendUrl = process.env.EXPO_PUBLIC_API_URL || "https://3000-itwgedgkqleov7a86zccw-d7261f33.us1.manus.computer";
+    const response = await fetch(`${backendUrl}/api/validate-alchemy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: key }),
+    });
+    
+    if (!response.ok) {
+      return { valid: false, error: `Backend error: ${response.status}` };
+    }
+    
+    const data = await response.json();
+    if (data.valid) {
       return { valid: true };
     }
-    return { valid: false, error: "Unexpected response from Alchemy" };
+    return { valid: false, error: data.error || "Invalid API key" };
   } catch (err: any) {
     if (err.name === "AbortError") {
       return { valid: false, error: "Connection timed out. Check your internet connection." };
-    }
-    if (err.message?.includes("401") || err.message?.includes("403")) {
-      return { valid: false, error: "Invalid API key. Check your Alchemy dashboard." };
     }
     return { valid: false, error: `Connection failed: ${err.message}` };
   }
