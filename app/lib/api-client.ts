@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -95,7 +95,11 @@ class ApiClient {
 
   async validateAlchemyKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
     try {
-      return await this.makeRequest<any>("/api/validate-alchemy", "POST", { apiKey });
+      const response = await this.makeRequest<any>("/api/validate-alchemy", "POST", { apiKey });
+      return {
+        valid: response.valid === true,
+        error: response.error,
+      };
     } catch (err: any) {
       return {
         valid: false,
@@ -108,7 +112,19 @@ class ApiClient {
 
   async getStatus(): Promise<BotStatus | null> {
     try {
-      return await this.makeRequest<BotStatus>("/api/status");
+      const response = await this.makeRequest<any>("/api/status");
+      return {
+        isRunning: response.isRunning || false,
+        totalTrades: response.totalTrades || 0,
+        successfulTrades: response.successfulTrades || 0,
+        failedTrades: response.failedTrades || 0,
+        totalProfit: response.totalProfit || 0,
+        lastTrade: response.lastTrade || null,
+        lastError: response.lastError || null,
+        lastScan: response.lastScan || null,
+        opportunities: response.opportunities || [],
+        uptime: response.uptime || 0,
+      };
     } catch (err) {
       console.error("Failed to get status:", err);
       return null;
@@ -120,7 +136,7 @@ class ApiClient {
   async getOpportunities(): Promise<Opportunity[]> {
     try {
       const response = await this.makeRequest<any>("/api/opportunities");
-      return response.opportunities || [];
+      return Array.isArray(response.opportunities) ? response.opportunities : [];
     } catch (err) {
       console.error("Failed to get opportunities:", err);
       return [];
@@ -162,7 +178,7 @@ class ApiClient {
       const response = await this.makeRequest<any>("/api/bot/start", "POST", {
         apiKey: this.apiKey,
       });
-      return response.status === "started";
+      return response.status === "started" || response.ok === true;
     } catch (err) {
       console.error("Failed to start bot:", err);
       return false;
@@ -174,7 +190,7 @@ class ApiClient {
   async stopBot(): Promise<boolean> {
     try {
       const response = await this.makeRequest<any>("/api/bot/stop", "POST", {});
-      return response.status === "stopped";
+      return response.status === "stopped" || response.ok === true;
     } catch (err) {
       console.error("Failed to stop bot:", err);
       return false;
