@@ -87,7 +87,7 @@ impl Queen {
             risk += 5.0;
         }
 
-        risk.min(100.0)
+        risk.min(100.0_f64)
     }
 
     /// Calculate slippage risk
@@ -149,11 +149,10 @@ impl Queen {
     /// Risk of gas price being too high
     fn calculate_gas_price_risk(&self) -> f64 {
         // This would be calculated based on current gas price
-        // For now, return a default value
-        10.0
+        // For now, return a defa        risk.min(100.0_f64)
     }
 
-    /// Decide whether to execute a risky trade
+    /// Decide whether to executea risky trade
     pub fn should_execute_risky_trade(&self, analysis: &MEVRiskAnalysis) -> bool {
         // Execute if:
         // 1. Overall score is below threshold
