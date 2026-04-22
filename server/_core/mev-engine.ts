@@ -4,6 +4,7 @@
  */
 
 import axios from "axios";
+import { RustOptimizedEngine, Queen } from "./rust-optimized-engine";
 
 interface PoolData {
   address: string;
@@ -40,6 +41,7 @@ interface BotState {
 }
 
 export class MEVEngine {
+  private engine = new RustOptimizedEngine();
   private alchemyApiKey: string | null = null;
   private rpcUrl: string = "";
   private isRunning: boolean = false;
@@ -216,10 +218,10 @@ export class MEVEngine {
       // Run initial scan
       await this.scan();
 
-      // Scan every 5 seconds
+      // Scan every 500ms for ultra-low latency
       this.scanInterval = setInterval(async () => {
         await this.scan();
-      }, 5000);
+      }, 500);
 
       console.log("[MEV] ✅ MEV Engine started successfully");
     } catch (error: any) {
@@ -281,6 +283,29 @@ export class MEVEngine {
       maticPrice: 0,
     };
     this.startTime = Date.now();
+  }
+
+  /**
+   * Get engine metrics
+   */
+  getMetrics() {
+    return this.engine.getMetrics();
+  }
+
+  /**
+   * Get detailed status including latency metrics
+   */
+  getDetailedStatus() {
+    const metrics = this.engine.getMetrics();
+    return {
+      ...this.getState(),
+      metrics,
+      latencyMs: {
+        scanner: metrics.scanner.avgScanTimeMs,
+        keeper: metrics.keeper.avgExecutionTimeMs,
+        total: metrics.scanner.avgScanTimeMs + metrics.keeper.avgExecutionTimeMs,
+      },
+    };
   }
 }
 
