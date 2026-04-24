@@ -19,7 +19,12 @@ export async function initializeExecutor(alchemyKey: string): Promise<void> {
     minProfitMargin: 0.1,
   });
 
-  await executor.initialize();
+  await executor.initialize({
+    alchemyKey,
+    maxSlippagePercent: 0.5,
+    maxPriceImpact: 2,
+    minProfitMargin: 0.1,
+  });
 }
 
 /**
@@ -32,7 +37,7 @@ export function createBotRouter(): Router {
    * POST /api/bot/wallet/set-keys
    * Set trading wallet private key and profit address
    */
-  router.post('/api/bot/wallet/set-keys', (req: Request, res: Response) => {
+  router.post('/api/bot/wallet/set-keys', async (req: Request, res: Response) => {
     try {
       if (!executor) {
         return res.status(503).json({ error: 'Executor not initialized' });
@@ -44,7 +49,7 @@ export function createBotRouter(): Router {
         return res.status(400).json({ error: 'Missing tradingKey or profitAddress' });
       }
 
-      executor.setWalletKeys(tradingKey, profitAddress);
+      await executor.setWalletKeys(tradingKey, profitAddress);
 
       res.json({
         success: true,
@@ -73,7 +78,10 @@ export function createBotRouter(): Router {
       }
 
       // Start bot in background
-      executor.start(poolAddresses, scanInterval || 1000).catch((error) => {
+      executor.start({
+        alchemyKey: process.env.ALCHEMY_KEY || '',
+        poolAddresses,
+      }, scanInterval || 1000).catch((error) => {
         console.error('[API] Bot error:', error.message);
       });
 
