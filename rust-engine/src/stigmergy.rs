@@ -90,7 +90,8 @@ impl Stigmergy {
         } else {
             // Create new pheromone
             if pheromones.len() < self.max_pheromones {
-                pheromones.insert(route_id, Pheromone::new(route_id, profit_usd));
+                let new_pheromone = Pheromone::new(route_id.clone(), profit_usd);
+                pheromones.insert(route_id, new_pheromone);
             }
         }
     }
@@ -164,7 +165,7 @@ impl Stigmergy {
         }
 
         // Roulette wheel selection
-        let mut rng_value = (Utc::now().timestamp_millis() % 100) as f64 / 100.0;
+        let rng_value = (Utc::now().timestamp_millis() % 100) as f64 / 100.0;
         let mut cumulative = 0.0;
 
         for (i, weight) in weights.iter().enumerate() {

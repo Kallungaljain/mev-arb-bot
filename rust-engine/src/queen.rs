@@ -118,7 +118,7 @@ impl Queen {
             risk += 10.0;
         }
 
-        risk.min(100.0)
+        risk.min(100.0_f64)
     }
 
     /// Calculate liquidity risk
@@ -142,14 +142,15 @@ impl Queen {
         let hops = opportunity.path.len();
         risk += (hops as f64 - 2.0) * 5.0;
 
-        risk.min(100.0)
+        risk.min(100.0_f64)
     }
 
     /// Calculate gas price risk
     /// Risk of gas price being too high
     fn calculate_gas_price_risk(&self) -> f64 {
         // This would be calculated based on current gas price
-        // For now, return a defa        risk.min(100.0_f64)
+        // For now, return a default value
+        5.0
     }
 
     /// Decide whether to executea risky trade

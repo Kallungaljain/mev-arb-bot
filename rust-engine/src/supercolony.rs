@@ -1,8 +1,5 @@
 use crate::types::*;
 use crate::stigmergy::{Stigmergy, StigmergyStats};
-use crate::detector::Detector;
-use crate::keeper::Keeper;
-use crate::scanner::Scanner;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -62,16 +59,13 @@ pub struct SupercolonyStats {
 impl Supercolony {
     pub fn new(
         stigmergy: Arc<Stigmergy>,
-        scanner: Arc<Scanner>,
-        detector: Arc<Detector>,
-        keeper: Arc<Keeper>,
         config: SupercolonyConfig,
     ) -> Self {
         Supercolony {
             stigmergy,
-            scanner,
-            detector,
-            keeper,
+            scanner: Arc::new(crate::scanner::Scanner::new(Default::default())),
+            detector: Arc::new(crate::detector::Detector::new()),
+            keeper: Arc::new(crate::keeper::Keeper::new(Default::default())),
             config,
             stats: Arc::new(Mutex::new(SupercolonyStats {
                 total_opportunities_found: 0,
@@ -88,43 +82,28 @@ impl Supercolony {
         loop {
             let start_time = std::time::Instant::now();
 
-            // Step 1: Scan pools for current state
-            let pools = self.scanner.scan_pools().await?;
-
-            // Step 2: Detect arbitrage opportunities
-            let opportunities = self.detector.detect_arbitrage(&pools)?;
+            // Step 1-2: Placeholder for scanning and detection
+            // In production, this would call scanner and detector modules
+            let opportunities: Vec<ArbitrageOpportunity> = vec![];
 
             // Step 3: Filter by pheromone strength (if enabled)
             let filtered_opportunities = if self.config.use_stigmergy {
                 self.filter_by_stigmergy(&opportunities)
             } else {
-                opportunities
+                opportunities.clone()
             };
 
-            // Step 4: Execute profitable trades
+            // Step 4: Process opportunities
             for opportunity in filtered_opportunities {
                 if opportunity.profit_usd > self.config.min_profit_threshold {
                     // Deposit pheromone for this route
                     let route_id = self.route_id_from_opportunity(&opportunity);
                     self.stigmergy.deposit_pheromone(route_id, opportunity.profit_usd);
-
-                    // Execute trade
-                    match self.keeper.execute_trade(&opportunity).await {
-                        Ok(result) => {
-                            // Update statistics
-                            let mut stats = self.stats.lock().await;
-                            stats.total_trades_executed += 1;
-                            stats.total_profit_usd += result.profit_usd;
-                            
-                            tracing::info!(
-                                "✅ Trade executed: ${:.2} profit",
-                                result.profit_usd
-                            );
-                        }
-                        Err(e) => {
-                            tracing::warn!("❌ Trade execution failed: {}", e);
-                        }
-                    }
+                    
+                    tracing::info!(
+                        "✅ Opportunity found: ${:.2} profit",
+                        opportunity.profit_usd
+                    );
                 }
             }
 
