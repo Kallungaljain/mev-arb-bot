@@ -5,6 +5,8 @@ pub mod queen;
 pub mod server;
 pub mod utils;
 pub mod config;
+pub mod stigmergy;
+pub mod supercolony;
 
 pub use types::*;
 pub use config::Config;
